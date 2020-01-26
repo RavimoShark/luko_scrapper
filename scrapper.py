@@ -30,7 +30,7 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 HREF_RE = re.compile(r'href="(.*?)"')
 CODE_RE = re.compile(r'SHARETHELOVE\+\S*')
-
+DOMAINN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 
 USER_AGENT = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'}
 
@@ -43,7 +43,7 @@ def get_google_search_results(search_term, number_results, language_code):
     google_url = 'https://www.google.com/search?q={}&num={}&hl={}'.format(escaped_search_term, number_results, language_code)
     response = requests.get(google_url, headers=USER_AGENT)
     response.raise_for_status()
-    logger.info("Got response [%s] for URL: %s", response.status, google_url)
+    logger.info("Got response [%s] for URL: %s", response.status_code, google_url)
  
     return search_term, response.text
 
@@ -62,17 +62,10 @@ def parse_results(html, keyword):
             # if description:
             #    description = description.get_text()
             if link != '#':
-                found_results.append({'keyword': keyword, 'rank': rank, 'title': title, 'link': link})
+                domain = DOMAINN_RE.findall(link)[0]
+                found_results.append({'keyword':keyword, 'rank':rank, 'title':title,'link':link, 'domain':domain})
                 rank += 1
-    return found_results
-
-def extract_domain(links):
-    regex = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
-    results = regex.findall(','.join(links))
-    domains=[]
-    if results :
-        domains = [domain.group(1) for domain in results]
-    return domains
+    return pd.DataFrame(found_results, columns=['keyword','rank','title','link','domain'])
 
 
 async def fetch_html(url: str, session: ClientSession, **kwargs) -> str:
@@ -131,7 +124,7 @@ async def parse(url: str,domain:str, session: ClientSession, **kwargs) -> set:
 
 async def write_one(url_file: IO, code_file:IO, url: str, domain:str, **kwargs) -> None:
     """Write the found HREFs from `url` to `file`."""
-    res = await parse(url=url, **kwargs)
+    res = await parse(url=url, domain=domain,  **kwargs)
     nb_code_found =0
     if not res:
         return None
@@ -159,12 +152,12 @@ async def bulk_crawl_and_write(url_file: IO, code_file:IO, urls: set, **kwargs) 
 
 def process_batch_res(fetch_url :set,nb_code_found:int, url_file:IO, code_file:IO, domain:str ):
     
-    data_url = pd.read_csv(url_file, sep='/t', header=0)
+    data_url = pd.read_csv(url_file.resolve(), sep='/t', header=0)
     data_url.loc[data_url['parsed_url'].isin(fetch_url),'processed'] = True
     urls_to_parse = set()
     codes_found = set()
     if nb_code_found>0:
-        data_code = pd.read_csv(code_file, sep='/t', header=0)
+        data_code = pd.read_csv(code_file.resolve(), sep='/t', header=0)
         codes_found = data_code.loc[data_code['domain']==domain,'code'].unique()
         urls_to_parse = data_url.loc[(data_url['domain']==domain) & (~data_url['processed']),'parsed_url'].unique()
         if not urls_to_parse :
@@ -178,9 +171,8 @@ def process_batch_res(fetch_url :set,nb_code_found:int, url_file:IO, code_file:I
 if __name__ == '__main__':
     keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 100, 'en')
     found_results = parse_results(html, keyword)
-    for dic in found_results:
-        print(dic['title'])
-        print(dic['link'])
+    urls = found_results.groupby('domain')['link'].first().values
+    # first time we explore all th url
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
 
@@ -197,3 +189,5 @@ if __name__ == '__main__':
     # process batch
     # iter
     #asyncio.run(bulk_crawl_and_write(file=outpath, urls=urls))
+    #for domain in found_results.domain.unique():
+    #    codes_found, urls_to_parse = process_batch_res()
