@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from threading import Thread
@@ -31,9 +32,9 @@ logging.getLogger("chardet.charsetprober").disabled = True
 HREF_RE = re.compile(r'href="(.*?)"')
 CODE_RE = re.compile(r'SHARETHELOVE\+\S*')
 DOMAINN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
-
+np.random.RandomState(seed=26)
 USER_AGENT = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'}
-
+RESTRICTED_DOMAINS =['facebook.com', 'twitter.com']
 
 
 def get_google_search_results(search_term, number_results, language_code):
@@ -125,7 +126,7 @@ async def parse(url: str,domain:str, session: ClientSession, **kwargs) -> set:
 async def write_one(url_file: IO, code_file:IO, url: str, domain:str, **kwargs) -> None:
     """Write the found HREFs from `url` to `file`."""
     res = await parse(url=url, domain=domain,  **kwargs)
-    nb_code_found =0
+    nb_code_found_per_domain ={}
     if not res:
         return None
     async with aiofiles.open(url_file, "a") as f:
@@ -133,61 +134,78 @@ async def write_one(url_file: IO, code_file:IO, url: str, domain:str, **kwargs) 
             await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{p}\t{False}\n")
     async with aiofiles.open(code_file, "a") as f:
         for code in res[1]:
-            await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{code}\n")
-            nb_code_found+=1
+            await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{code}\t{False}\n")
+            nb_code_found_per_domain[domain] = nb_code_found_per_domain.get(domain,0) +1
+        logger.info("Wrote results for code found: %s", nb_code_found_per_domain.get(domain,0))
+    return nb_code_found_per_domain    
 
-        logger.info("Wrote results for code found: %s", nb_code_found)
-    return nb_code_found    
-
-async def bulk_crawl_and_write(url_file: IO, code_file:IO, urls: set, **kwargs) -> None:
+async def bulk_crawl_and_write(url_file: IO, code_file:IO, sel_data: list, **kwargs) -> None:
     """Crawl & write concurrently to `file` for multiple `urls`."""
     async with ClientSession() as session:
         tasks = []
-        for url, domain in urls:
-            tasks.append(
-                write_one(url_file=url_file,code_file=code_file, url=url, domain=domain, session=session, **kwargs)
+        for domain, urls in sel_data.items():
+            if domain in RESTRICTED_DOMAINS:
+                continue
+            tasks.extend(
+                [write_one(url_file=url_file,code_file=code_file, url=url, domain=domain, session=session, **kwargs) for url in urls]
             )
         res = await asyncio.gather(*tasks)
-    return res
+        for _, domain in sel_data:
+            resultat[domain] = np.sum([d.get(domain,0) for d in res])
+    return resultat
 
-def process_batch_res(fetch_url :set,nb_code_found:int, url_file:IO, code_file:IO, domain:str ):
+def process_batch_res(fetch_url:set, nb_code_found_per_domain:dict, url_file:IO, code_file:IO):
     
     data_url = pd.read_csv(url_file.resolve(), sep='/t', header=0)
     data_url.loc[data_url['parsed_url'].isin(fetch_url),'processed'] = True
-    urls_to_parse = set()
-    codes_found = set()
-    if nb_code_found>0:
-        data_code = pd.read_csv(code_file.resolve(), sep='/t', header=0)
-        codes_found = data_code.loc[data_code['domain']==domain,'code'].unique()
-        urls_to_parse = data_url.loc[(data_url['domain']==domain) & (~data_url['processed']),'parsed_url'].unique()
-        if not urls_to_parse :
-            print('no more url in domain')
-        elif len(urls_to_parse)>100:
-            urls_to_parse=urls_to_parse[:100]
-    return codes_found, urls_to_parse
+    data_code = pd.read_csv(code_file.resolve(), sep='/t', header=0)
+    codes_found = data_code['code'].unique()
+    domains_url = {}
+    url_count = 100
+    
+    for val, domain in nb_code_found_per_domain.items():
+        if url_count <=0 :
+            break
+        if val > 0:
+            urls = data_url.loc[(data_url['domain']==domain) & (~data_url['processed']),'parsed_url'].unique()
+            if not urls:
+                 data_url.loc[data_url['domain']==domain,'processed'] = True
+                 logger.info('The domain %s has been entirely processed', domain)
+                 continue
+            else :
+                limit = min(url_count,30)
+                elt = np.random.randint(10,limit)
+                url_count-= elt
+                if url_count < 10:
+                    elt+=url_count
+                    url_count-=url_count
+                domains_url[domains_url] = list(np.random.choice(urls,url_count,replace=False))
+
+        else:
+            data_url.loc[data_url['domain']==domain,'processed'] = True
+            logger.info('The domain %s has been entirely processed', domain)
+            continue
+
+    return codes_found, domains_url
 
 
 
 if __name__ == '__main__':
-    keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 100, 'en')
+    keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 100, 'fr')
     found_results = parse_results(html, keyword)
-    urls = found_results.groupby('domain')['link'].first().values
-    # first time we explore all th url
+    sel_data = pd.Series(found_results[~found_results.domain.isin(RESTRICTED_DOMAINS)].groupby('domain')['link'].first()).to_dict()
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
-
-    # with open(here.joinpath("urls.txt")) as infile:
-    #    urls = set(map(str.strip, infile))
-
     outpath_urls = here.joinpath("foundurls.txt")
     outpath_code = here.joinpath("foundcodes.txt")
     with open(outpath_urls, "w") as outfile:
         outfile.write("timestamp\tsource_url\tdomain\tparsed_url\tprocessed\n")
     with open(outpath_code, "w") as outfile:
         outfile.write("timestamp\tsource_url\tdomain\tcode\n")
-    #loop over domain
-    # process batch
-    # iter
-    #asyncio.run(bulk_crawl_and_write(file=outpath, urls=urls))
-    #for domain in found_results.domain.unique():
-    #    codes_found, urls_to_parse = process_batch_res()
+    
+    resultat = asyncio.run(bulk_crawl_and_write(outpath_urls, outpath_code,sel_data)
+    fetch_url = sel_data.values()
+    # To Do last loop and Socials
+    while fetch_url:
+        res = process_batch_res(fetch_url, resultat, outpath_urls, outpath_code)
+        resultat = asyncio.run(bulk_crawl_and_write(outpath_urls, outpath_code,sel_data)
