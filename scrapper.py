@@ -30,7 +30,7 @@ logger = logging.getLogger("luko_scrapper")
 logging.getLogger("chardet.charsetprober").disabled = True
 
 HREF_RE = re.compile(r'href="(.*?)"')
-CODE_RE = re.compile(r'SHARETHELOVE\+\S*')
+CODE_RE = re.compile(r'SHARETHELOVE\+[a-zA-Z0-9]*')
 DOMAINN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 np.random.RandomState(seed=26)
 USER_AGENT = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'}
@@ -141,12 +141,12 @@ async def write_one(file_res:IO, url: str, domain:str, urls_found:set, codes_fou
             count += 1
         if len(res[0]) > len(res[1]):
             for u_found  in res[0][count:] : 
-                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{''}\t{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{'Not Found'}\t{False}\n")
                 new_elt_per_domain[domain]['url'] = new_elt_per_domain[domain].get('url',0)+1
                 count += 1
         elif len(res[0])<len(res[1]):
              for c_found in res[1][count:]: 
-                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{''}\t{c_found}\t{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{'Not Found'}\t{c_found}\t{False}\n")
                 new_elt_per_domain[domain]['code'] = new_elt_per_domain[domain].get('code',0)+1
                 count += 1
     logger.info("Wrote results for code found: %s for url: %s", new_elt_per_domain[domain].get('code',0), domain)
