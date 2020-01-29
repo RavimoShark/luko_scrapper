@@ -135,18 +135,18 @@ async def write_one(file_res:IO, url: str, domain:str, urls_found:set, codes_fou
         return None
     async with aiofiles.open(file_res, "a") as f:
         for u_found,c_found in zip(res[0], res[1]):
-            await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{c_found}\t{False}\n")
+            await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{c_found}\t{0}\n")
             new_elt_per_domain[domain]['url'] = new_elt_per_domain[domain].get('url',0)+1
             new_elt_per_domain[domain]['code'] = new_elt_per_domain[domain].get('code',0)+1
             count += 1
         if len(res[0]) > len(res[1]):
             for u_found  in res[0][count:] : 
-                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{'Not Found'}\t{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{u_found}\t{'Not Found'}\t{0}\n")
                 new_elt_per_domain[domain]['url'] = new_elt_per_domain[domain].get('url',0)+1
                 count += 1
         elif len(res[0])<len(res[1]):
              for c_found in res[1][count:]: 
-                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{'Not Found'}\t{c_found}\t{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()}\t{url}\t{domain}\t{'Not Found'}\t{c_found}\t{0}\n")
                 new_elt_per_domain[domain]['code'] = new_elt_per_domain[domain].get('code',0)+1
                 count += 1
     logger.info("Wrote results for code found: %s for url: %s", new_elt_per_domain[domain].get('code',0), domain)
@@ -174,8 +174,8 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: list, urls_found: set, co
 
 def process_batch_res(fetch_url:set, new_elt_per_domain:dict, res_file, url_count=100):
     
-    data= pd.read_csv(res_file.resolve(), sep='/t', header=0, engine='python')
-    data.loc[data['parsed_url'].isin(fetch_url),'processed'] = True
+    data= pd.read_csv(res_file.resolve(), sep='/t', header=0)
+    data.loc[data['parsed_url'].isin(fetch_url),'processed'] = 1
     codes_found = data['code'].unique()
     urls_found = data['url_parsed'].unique()
     domains_url = {}
@@ -185,13 +185,13 @@ def process_batch_res(fetch_url:set, new_elt_per_domain:dict, res_file, url_coun
         if url_count <=0 :
             break
         if new_elt_per_domain[domain].get('url',0) > 0:
-            expl = data[(data['code'].isnull()) & (data['domain']==domain) & (data['processed'])].shape[0]
+            expl = data[(data['code'].isnull()) & (data['domain']==domain) & (data['processed']==1)].shape[0]
             if expl> EXPL_LIMITS:
                 logger.info('The domain %s has reached his exploration limits %d links without any new codes', domain,EXPL_LIMITS)
                 continue
-            urls = data.loc[(data['domain']==domain) & (~data['processed']),'parsed_url'].unique()
+            urls = data.loc[(data['domain']==domain) & (data['processed']==0),'parsed_url'].unique()
             if not urls:
-                data.loc[data['domain']==domain,'processed'] = True
+                data.loc[data['domain']==domain,'processed'] = 1
                 logger.info('The domain %s has been entirely processed', domain)
                 continue
             else :
