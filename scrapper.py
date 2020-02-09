@@ -32,6 +32,7 @@ logging.getLogger("chardet.charsetprober").disabled = True
 HREF_RE = re.compile(r'href="(.*?)"')
 CODE_RE = re.compile(r'SHARETHELOVE\+[a-zA-Z0-9]*')
 DOMAINN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
+LUKO_RE = r'.*luko*'
 np.random.RandomState(seed=26)
 USER_AGENT = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'}
 RESTRICTED_DOMAINS =['facebook.com', 'twitter.com']
@@ -86,6 +87,7 @@ async def parse(url: str,domain:str, session: ClientSession, urls_found: set, co
     """Find HREFs in the HTML of `url`."""
     found_urls = set()
     found_codes = set()
+    contains_luko = []
     try: 
         html = await fetch_html(url=url, session=session, **kwargs)
     except (
@@ -135,18 +137,18 @@ async def write_one(file_res:IO, url: str, domain:str, urls_found:set, codes_fou
         return None
     async with aiofiles.open(file_res, "a") as f:
         for u_found,c_found in zip(res[0], res[1]):
-            await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;{u_found};##;{c_found};##;{False}\n")
+            await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;{u_found};##;{c_found};##;{False};##;{False}\n")
             new_elt_per_domain[domain]['url'] = new_elt_per_domain[domain].get('url',0)+1
             new_elt_per_domain[domain]['code'] = new_elt_per_domain[domain].get('code',0)+1
             count += 1
         if len(res[0]) > len(res[1]):
             for u_found  in res[0][count:] : 
-                await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;{u_found};##;;##;{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;{u_found};##;;##;{False};##;{False}\n")
                 new_elt_per_domain[domain]['url'] = new_elt_per_domain[domain].get('url',0)+1
                 count += 1
         elif len(res[0])<len(res[1]):
              for c_found in res[1][count:]: 
-                await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;;##;{c_found};##;{False}\n")
+                await f.write(f"{datetime.datetime.now().timestamp()};##;{url};##;{domain};##;;##;{c_found};##;{False};##;{False}\n")
                 new_elt_per_domain[domain]['code'] = new_elt_per_domain[domain].get('code',0)+1
                 count += 1
     logger.info("Wrote results for code found: %s for url: %s", new_elt_per_domain[domain].get('code',0), domain)
@@ -156,29 +158,25 @@ async def write_one(file_res:IO, url: str, domain:str, urls_found:set, codes_fou
 
 async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, codes_found: set, **kwargs) -> None:
     """Crawl & write concurrently to `file` for multiple `urls`."""
-    async with ClientSession(read_timeout=120) as session:
+    async with ClientSession(read_timeout=10) as session:
         tasks = []
-        resultat = {}
-        fetch_url=[]
         for domain, urls in sel_data.items():
             logger.info("urls input %s", urls)
-            if domain in RESTRICTED_DOMAINS:
-                continue
+            ## if domain in RESTRICTED_DOMAINS:
+            ##    continue
             for url in urls:
-                fetch_url.append(url)
                 tasks.append(write_one(file_res=file_res, url=url, domain=domain,
                  session=session, urls_found = urls_found, codes_found=codes_found, **kwargs))
         res = await asyncio.gather(*tasks)
-        for domain, _ in sel_data.items():
-            resultat[domain] = {'url' :np.sum([d[domain].get('url',0) for d in res if d.get(domain)]),
-             'code':np.sum([d[domain].get('code',0) for d in res if d.get(domain)])}
-        res = process_batch_res(set(fetch_url), resultat, file_res)
+        ## merging dict##
     return res
 
-def process_batch_res(fetch_url:set, new_elt_per_domain:dict, res_file, url_count=100):
+def process_batch_res(fetch_url:set, new_elt_per_domain:list, res_file, url_count=100):
     
-    data= pd.read_csv(res_file.resolve(), sep=';##;', header=0, engine='python')
+    data = pd.read_csv(res_file.resolve(), sep=';##;', header=0, engine='python')
     data.loc[data['parsed_url'].isin(list(fetch_url)),'processed'] = True
+    data.loc[~data['processed'],'contains_luko'] = data.loc[~data['processed'],'parsed_url'].str.contains(pat=LUKO_RE, case=False, flags=re.IGNORECASE)
+    data.sort_values(by='contains_luko', ascending=False, inplace=True)
     codes_found = data['code'].unique()
     urls_found = data['parsed_url'].unique()
     domains_url = {}
@@ -193,7 +191,7 @@ def process_batch_res(fetch_url:set, new_elt_per_domain:dict, res_file, url_coun
             urls = list(data.loc[(data['domain']==domain) & (~data['processed']),'parsed_url'].unique())
             if not urls:
                 data.loc[data['domain']==domain,'processed'] = True
-                logger.info('The domain %s has been entirely processed', domain)
+                logger.info('The domain %s has been entirerely processed', domain)
                 continue
             else :
                 limit = min(url_count,20,len(urls))
@@ -209,14 +207,17 @@ def process_batch_res(fetch_url:set, new_elt_per_domain:dict, res_file, url_coun
 
 
 if __name__ == '__main__':
-    keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 100, 'fr')
+    keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 100, 'en')
     found_results = parse_results(html, keyword)
     sel_data = sel_data = pd.Series(found_results.groupby('domain')['link'].agg(lambda x :list(x.values))).to_dict()
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
     outpath_res = here.joinpath("res.txt")
     with open(outpath_res, "w") as outfile:
-        outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed\n")
-    resultat = asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values, set())) 
+        outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko\n")
+    resultat = asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values(), set())) 
+    print(resultat)
     res = process_batch_res(set([url for urls in sel_data.values() for url in urls]), resultat, outpath_res)
-    
+    for i in range(1):
+       resultat = asyncio.run(bulk_crawl_and_write(outpath_res, res[2],res[0], res[1])) 
+       res = process_batch_res(set([url for urls in res[2].values() for url in urls]), resultat, outpath_res)
