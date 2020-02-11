@@ -34,7 +34,8 @@ CODE_RE = re.compile(r'SHARETHELOVE\+[a-zA-Z0-9]*')
 DOMAINN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 LUKO = 'luko'
 np.random.RandomState(seed=26)
-USER_AGENT = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'}
+USER_AGENT = {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36'}
+
 RESTRICTED_DOMAINS =['facebook.com', 'twitter.com']
 EXPL_LIMITS = 500
 
