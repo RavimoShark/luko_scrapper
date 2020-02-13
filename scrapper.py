@@ -93,7 +93,7 @@ async def parse(url: str,domain:str, session: ClientSession, urls_found: set, **
     except (
         aiohttp.ClientError,
         aiohttp.http_exceptions.HttpProcessingError,
-    ) as e:
+    ) as e: # manage too many requests error
         logger.error(
             "aiohttp exception for %s [%s]: %s",
             url,
@@ -179,19 +179,18 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
             logger.info("Wrote results for code found: %s for url: %s", merged_res[domain].get('code',0), domain)
             #logger.info("Wrote results for url found: %s for url: %s", merged_res[domain].get('url',0), domain)
 
-    return urls_parsed
 
-def process_batch_res(url_parsed, res_file: IO, df_file: IO, url_count=100):
+def process_batch_res(data : pd.DataFrame, res_file: IO, df_file: IO, url_count=100):
     
-    data = pd.read_csv(res_file.resolve(), sep=';##;', header=0, engine='python')
+    temp = pd.read_csv(res_file.resolve(), sep=';##;', header=0, engine='python')
+    data = pd.concat([data,temp], axis=0, ignore_index=True)
     data.loc[data['parsed_url'].isin(data['source_url'].unique()),'processed'] = True
-    data.loc[data['parsed_url'].isin(url_parsed),'processed'] = True
+    data.loc[data['parsed_url'].isin(data['urls_sent'].unique()),'processed'] = True
     data.loc[~data['processed'],'contains_luko'] = data.loc[~data['processed'],'parsed_url'].str.contains(pat=LUKO, case=False)
     #data.sort_values(by='contains_luko', ascending=False, inplace=True)
     #codes_found = data['code'].unique()
     urls_found = data['parsed_url'].unique()
-    domains = data['domain'].unique()
-
+    domains = data.loc[~data.processed,'domain'].unique()
     domains_url = {}
     for domain in np.random.choice(domains,10, replace=False):
         if url_count <=0 :
@@ -213,30 +212,41 @@ def process_batch_res(url_parsed, res_file: IO, df_file: IO, url_count=100):
                 elt = np.random.randint(1,limit)
             url_count-= elt
             domains_url[domain] = np.random.choice(urls, elt, False)
+    data[data.parsed_url.isin([v for val in domains_url.values() for v in val],'urls_sent')] = True
     data.to_csv(df_file.resolve(), sep=';')
     return urls_found, domains_url, data[data['code'].notnull()].shape[0]
 
-
-
-if __name__ == '__main__':
-    keyword, html = get_google_search_results('SHARETHELOVE*+LUKO', 50, 'fr')
-    found_results = parse_results(html, keyword)
-    sel_data = pd.Series(found_results.groupby('domain')['link'].agg(lambda x :list(x.values))).to_dict()
-    # ajout à l'arrache à revoir lors de la code refacto
-    sel_data['joemobile-avis.fr']=['https://www.joemobile-avis.fr/luko/code-promo-luko']
+def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, lang='fr',
+    domain_url=dict(), outpath_str='res.txt',df_file_str='final_df.csv', from_scratch=True):
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
-    outpath_res = here.joinpath("res.txt")
-    df_file = here.joinpath('final_df.csv')
+    outpath_res = here.joinpath(outpath_str)
+    df_file = here.joinpath(df_file_str)
     with open(outpath_res, "w") as outfile:
-        outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko\n")
-    urls_parsed = asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values())) 
-    res = process_batch_res(urls_parsed, outpath_res, df_file)
+        outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko;##;urls_sent\n")
+    if from_scratch:
+        keyword, html = get_google_search_results(search_term, search_items, lang)
+        found_results = parse_results(html, keyword)
+        sel_data = pd.Series(found_results.groupby('domain')['link'].agg(lambda x :list(x.values))).to_dict()
+        sel_data = {**sel_data, **domain_url}
+        asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values())) 
+        res = process_batch_res(pd.DataFrame(), outpath_res, df_file)
+    else :
+        data = pd.read_csv(df_file.resolve(), sep=';')
     start = datetime.datetime.now()
     for i in range(1000):
-       urls_parsed += asyncio.run(bulk_crawl_and_write(outpath_res, res[1],res[0])) 
-       res = process_batch_res(urls_parsed, outpath_res, df_file)
-       if i % 10 ==0:
+        with open(outpath_res, "w") as outfile:
+            outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko;##;urls_sent\n")
+        asyncio.run(bulk_crawl_and_write(outpath_res, res[1],res[0])) 
+        res = process_batch_res(data,outpath_res, df_file)
+        if not res[1] :
+            duration = datetime.datetime.now() -start
+            logger.info("All domain explored : %d",duration) 
+        if i % 10 ==0:
            duration = datetime.datetime.now() -start
            logger.info("Scrapper duration for 10 : %d",duration)
            logger.info("We have found %d codes",res[2])
+
+
+if __name__ == '__main__':
+    main_proc()
