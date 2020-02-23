@@ -19,6 +19,9 @@ import aiohttp
 from aiohttp import ClientSession
 import pathlib
 import sys
+import argparse
+
+
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
@@ -212,12 +215,12 @@ def process_batch_res(data : pd.DataFrame, res_file: IO, df_file: IO, url_count=
                 elt = np.random.randint(1,limit)
             url_count-= elt
             domains_url[domain] = np.random.choice(urls, elt, False)
-    data[data.parsed_url.isin([v for val in domains_url.values() for v in val],'urls_sent')] = True
+    data.loc[data.parsed_url.isin([v for val in domains_url.values() for v in val]),'urls_sent'] = True
     data.to_csv(df_file.resolve(), sep=';')
     return urls_found, domains_url, data[data['code'].notnull()].shape[0]
 
 def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, lang='fr',
-    domain_url=dict(), outpath_str='res.txt',df_file_str='final_df.csv', from_scratch=True):
+    domain_url=dict(), outpath_str='res.txt',df_file_str='final_df.csv', from_scratch=False) :
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
     outpath_res = here.joinpath(outpath_str)
@@ -233,6 +236,7 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, la
         res = process_batch_res(pd.DataFrame(), outpath_res, df_file)
     else :
         data = pd.read_csv(df_file.resolve(), sep=';')
+        res = process_batch_res(data,outpath_res, df_file)
     start = datetime.datetime.now()
     for i in range(1000):
         with open(outpath_res, "w") as outfile:
@@ -247,6 +251,26 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, la
            logger.info("Scrapper duration for 10 : %d",duration)
            logger.info("We have found %d codes",res[2])
 
+parser = argparse.ArgumentParser(description='Luko Scrapper')
+parser.add_argument('--n_iter', default=1000, type=int, help='number of maximum iteratons')
+parser.add_argument('--search_term', default='SHARETHELOVE*+LUKO', type=str, help='Google search string')
+parser.add_argument('--lang', default='fr', type=str, help='Google search language')
+parser.add_argument('--domain_url', default=dict(), type=dict, help='Domain url dictionnary to add to google search results')
+parser.add_argument('--outpath_str', default='res.txt', type=str, help='path file where each result iteration is saved')
+parser.add_argument('--df_file_str', default='final_df.csv', type=str, help='csv path where result dataframe are saved')
+parser.add_argument('--from_scratch', default=False, type=bool, help='Bool variable to start from scratch Google search')
+
+
+
 
 if __name__ == '__main__':
-    main_proc()
+    args = parser.parse_args()
+    n_iter = args.n_iter
+    search_term = args.search_term
+    lang = args.lang
+    domain_url = args.domain_url
+    outpath_str = args.outpath_str
+    df_file_str = args.df_file_str
+    from_scratch = args.from_scratch
+    main_proc(n_iter=n_iter,search_term=search_term,lang=lang,domain_url=domain_url, 
+    outpath_str=outpath_str,df_file_str=df_file_str,from_scratch=from_scratch)
