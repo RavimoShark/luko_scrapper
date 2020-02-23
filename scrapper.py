@@ -184,9 +184,11 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
 
 
 def process_batch_res(data : pd.DataFrame, res_file: IO, df_file: IO, url_count=100):
-    
+    print('######## initial shape ', data.shape)
     temp = pd.read_csv(res_file.resolve(), sep=';##;', header=0, engine='python')
+    print('######## Temp shape ', temp.shape)
     data = pd.concat([data,temp], axis=0, ignore_index=True)
+    print('######## data shape ', data.shape)
     data.loc[data['parsed_url'].isin(data['source_url'].unique()),'processed'] = True
     data.loc[data['parsed_url'].isin(data['urls_sent'].unique()),'processed'] = True
     data.loc[~data['processed'],'contains_luko'] = data.loc[~data['processed'],'parsed_url'].str.contains(pat=LUKO, case=False)
@@ -216,8 +218,8 @@ def process_batch_res(data : pd.DataFrame, res_file: IO, df_file: IO, url_count=
             url_count-= elt
             domains_url[domain] = np.random.choice(urls, elt, False)
     data.loc[data.parsed_url.isin([v for val in domains_url.values() for v in val]),'urls_sent'] = True
-    data.to_csv(df_file.resolve(), sep=';')
-    return urls_found, domains_url, data[data['code'].notnull()].shape[0]
+    
+    return urls_found, domains_url, data[data['code'].notnull()].shape[0], data
 
 def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, lang='fr',
     domain_url=dict(), outpath_str='res.txt',df_file_str='final_df.csv', from_scratch=False) :
@@ -235,21 +237,23 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, la
         asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values())) 
         res = process_batch_res(pd.DataFrame(), outpath_res, df_file)
     else :
-        data = pd.read_csv(df_file.resolve(), sep=';')
+        data = pd.read_csv(df_file.resolve(), sep=';', index=False)
         res = process_batch_res(data,outpath_res, df_file)
     start = datetime.datetime.now()
-    for i in range(1000):
+    for i in range(n_iter):
         with open(outpath_res, "w") as outfile:
             outfile.write("timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko;##;urls_sent\n")
         asyncio.run(bulk_crawl_and_write(outpath_res, res[1],res[0])) 
-        res = process_batch_res(data,outpath_res, df_file)
+        res = process_batch_res(res[3],outpath_res, df_file)
         if not res[1] :
             duration = datetime.datetime.now() -start
             logger.info("All domain explored : %d",duration) 
+            res[3].to_csv(df_file.resolve(), sep=';')
         if i % 10 ==0:
            duration = datetime.datetime.now() -start
            logger.info("Scrapper duration for 10 : %d",duration)
            logger.info("We have found %d codes",res[2])
+           res[3].to_csv(df_file.resolve(), sep=';')
 
 parser = argparse.ArgumentParser(description='Luko Scrapper')
 parser.add_argument('--n_iter', default=1000, type=int, help='number of maximum iteratons')
