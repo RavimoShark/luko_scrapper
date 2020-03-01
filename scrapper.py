@@ -237,7 +237,7 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, la
         asyncio.run(bulk_crawl_and_write(outpath_res, sel_data,sel_data.values())) 
         res = process_batch_res(pd.DataFrame(), outpath_res, df_file)
     else :
-        data = pd.read_csv(df_file.resolve(), sep=';', index=False)
+        data = pd.read_csv(df_file.resolve(), sep=';')
         res = process_batch_res(data,outpath_res, df_file)
     start = datetime.datetime.now()
     for i in range(n_iter):
@@ -248,12 +248,12 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE*+LUKO', search_items=50, la
         if not res[1] :
             duration = datetime.datetime.now() -start
             logger.info("All domain explored : %d",duration) 
-            res[3].to_csv(df_file.resolve(), sep=';')
+            res[3].to_csv(df_file.resolve(), sep=';', index=False)
         if i % 10 ==0:
            duration = datetime.datetime.now() -start
            logger.info("Scrapper duration for 10 : %d",duration)
            logger.info("We have found %d codes",res[2])
-           res[3].to_csv(df_file.resolve(), sep=';')
+           res[3].to_csv(df_file.resolve(), sep=';', index=False)
 
 parser = argparse.ArgumentParser(description='Luko Scrapper')
 parser.add_argument('--n_iter', default=1000, type=int, help='number of maximum iteratons')
