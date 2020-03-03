@@ -134,7 +134,7 @@ async def parse(url: str, domain: str, session: ClientSession, urls_found: set, 
         urls_found {set} -- set of urls already found
 
     Returns:
-        tuple -- list of total found urls, list of found codes within a page
+        tuple -- list found urls within a page, list of found codes within a page
     """
     found_urls = set()
     found_codes = set()
@@ -181,8 +181,18 @@ async def parse(url: str, domain: str, session: ClientSession, urls_found: set, 
         return list(found_urls), list(found_codes)
 
 
-async def write_one(file_res: IO, url: str, domain: str, urls_found: set, **kwargs) -> None:
-    """Write the found HREFs from `url` to `file`."""
+async def write_one(file_res: IO, url: str, domain: str, urls_found: set, **kwargs) -> dict:
+    """write the result asynchronously in text file
+
+    Arguments:
+        file_res {IO} -- file where we put the result
+        url {str} -- url scrapped
+        domain {str} -- domain scrapped
+        urls_found {set} -- urls found
+
+    Returns:
+        dict -- dictionnary describing new urls and codes found per domain
+    """
     res = await parse(url=url, domain=domain, urls_found=urls_found,  **kwargs)
     new_elt_per_domain = {domain: {}}
     count = 0
