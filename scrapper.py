@@ -36,11 +36,12 @@ HREF_RE = re.compile(r'href="(.*?)"')
 CODE_RE = re.compile(r'SHARETHELOVE[a-zA-Z0-9]*\+[a-zA-Z0-9]*')
 DOMAIN_RE = re.compile(r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 LUKO = 'luko'
+URL_REGEX = {'1parrainage.com':re.compile(r'.*offre=1671.*')}
 np.random.RandomState(seed=26)
 USER_AGENT = {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36'}
 
 RESTRICTED_DOMAINS =['facebook.com', 'twitter.com']
-EXPL_LIMITS = 500
+EXPL_LIMITS = 1000
 
 
 def get_google_search_results(search_term, number_results, language_code):
@@ -87,10 +88,11 @@ async def fetch_html(url: str, session: ClientSession, **kwargs) -> str:
     html = await resp.text()
     return html
 
-async def parse(url: str,domain:str, session: ClientSession, urls_found: set, **kwargs) -> set:
+async def parse(url: str,domain:str, session: ClientSession, urls_found: set,  **kwargs) -> set:
     """Find HREFs in the HTML of `url`."""
     found_urls = set()
     found_codes = set()
+    url_re = URL_REGEX.get(domain)
     try: 
         html = await fetch_html(url=url, session=session, **kwargs)
     except (
@@ -118,8 +120,12 @@ async def parse(url: str,domain:str, session: ClientSession, urls_found: set, **
                 pass
             else:
                 if domain in abslink and abslink not in urls_found:
-                    found_urls.add(str(abslink))
-                    #logger.info("Found %s for url %s", abslink, url)
+                    if url_re:
+                        for url in url_re.findall(str(abslink)) :   
+                            found_urls.add(str(abslink))
+                            #logger.info("Found %s for url %s", abslink, url)
+                    else:
+                        found_urls.add(str(abslink))
         for code in CODE_RE.findall(html):
             found_codes.add(code.replace('<[^>]*>', ''))
                 #logger.info("Found %s for url %s", code, url)
