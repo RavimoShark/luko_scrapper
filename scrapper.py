@@ -191,7 +191,7 @@ async def write_one(file_res: IO, url: str, domain: str, urls_found: set, **kwar
         urls_found {set} -- urls found
 
     Returns:
-        dict -- dictionnary describing new urls and codes found per domain
+        dict -- dictionnary counting new urls and codes found per domain
     """
     res = await parse(url=url, domain=domain, urls_found=urls_found,  **kwargs)
     new_elt_per_domain = {domain: {}}
@@ -225,7 +225,13 @@ async def write_one(file_res: IO, url: str, domain: str, urls_found: set, **kwar
 
 
 async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **kwargs) -> None:
-    """Crawl & write concurrently to `file` for multiple `urls`."""
+    """Crawl & write concurrently to `file` for multiple `urls`.
+
+    Arguments:
+        file_res {IO} -- the text file where we write result for the scrapped batched url
+        sel_data {dict} -- a dictionnary with key domains and values list of urls to be crawled
+        urls_found {set} -- a set of url already found
+    """
     async with ClientSession(read_timeout=10) as session:
         tasks = []
         urls_parsed = []
@@ -252,7 +258,26 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
             # logger.info("Wrote results for url found: %s for url: %s", merged_res[domain].get('url',0), domain)
 
 
-def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=100):
+def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=100) -> tuple:
+    """processing the results of each batch:
+       updating the dataframe containing the following columns [timestamp, source_url, domain,
+       parsed_url, code, processed, contains_luko, urls_sent]
+       updating the set of urls found
+       builting the new dictionnary with keys domain and values list of urls to be scrapped
+
+
+    Arguments:
+        data {pd.DataFrame} -- DataFrame  contaiining [timestamp, source_url, domain,
+                               parsed_url, code, processed, contains_luko, urls_sent].
+        res_file {IO} -- path where we write batch of 100 requests.
+        df_file {IO} -- path where we store the pd.DataFrame data
+
+    Keyword Arguments:
+        url_count {int} -- number of requests processes asynchronously at each batch (default: {100})
+
+    Returns:
+        tuple -- list of urls already found, dictionnary domain :[url to be scrapped], number of codes found, dataframe data
+    """
     print('######## initial shape ', data.shape)
     temp = pd.read_csv(res_file.resolve(), sep=';##;',
                        header=0, engine='python')
@@ -303,6 +328,18 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
 
 def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50, lang='fr',
               domain_url=dict(), outpath_str='res.txt', df_file_str='final_df.csv', from_scratch=False):
+              """ Function wrapping the scrapper
+
+              Keyword Arguments:
+                  n_iter {int} -- request batch number (default: {1000})
+                  search_term {str} -- google search term (default: {'SHARETHELOVE+Luko+code'})
+                  search_items {int} -- number of  top links retreieved from the search (default: {50})
+                  lang {str} -- trigramm language code for the google search engine (default: {'fr'})
+                  domain_url {[type]} -- domain :list of urls to add to the search result (default: {dict()})
+                  outpath_str {str} -- path where we store each batch result (default: {'res.txt'})
+                  df_file_str {str} -- path where we store csv dataframe result (default: {'final_df.csv'})
+                  from_scratch {bool} -- do we start from an existing dataframe (default: {False})
+              """
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
     here = pathlib.Path(__file__).parent
     outpath_res = here.joinpath(outpath_str)
