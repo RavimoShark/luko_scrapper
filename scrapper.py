@@ -37,14 +37,26 @@ DOMAIN_RE = re.compile(
     r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 LUKO = 'luko'
 URL_REGEX = {'1parrainage.com': re.compile(r'.*1671.*')}
-DOMAIN_URL = {'1parrainage.com': ['https://www.1parrainage.com/offre_parrainage_Luko.php'],
-              'joemobile-avis.fr': ['https://www.joemobile-avis.fr/luko/code-promo-luko']}
-
+DOMAIN_URL = {
+    'joemobile-avis.fr': ['https://www.joemobile-avis.fr/luko/code-promo-luko']}
 USER_AGENT = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36'}
-
 RESTRICTED_DOMAINS = ['facebook.com', 'twitter.com']
 EXPL_LIMITS = 1000
+
+
+def get_user_agent_list(user_agent_file: str, n_iter: int) -> list:
+    """get a list of random user agent among csv file with a column [User Agent]
+
+    Arguments:
+        user_agent_file {str} -- path to user_agent dataframe in csv
+        n_iter {int} -- number of user agent requested
+
+    Returns:
+        list -- list of user agent strings
+    """
+    df_user_agent = pd.read_csv(user_agent_file)
+    return list(np.random.choice(df_user_agent['User Agent'].values, n_iter))
 
 
 def get_google_search_results(search_term, number_results, language_code):
@@ -232,7 +244,11 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
         sel_data {dict} -- a dictionnary with key domains and values list of urls to be crawled
         urls_found {set} -- a set of url already found
     """
-    async with ClientSession(read_timeout=10) as session:
+
+    # timeout strategy a lot of computer memory
+    timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+    # and cpu i have a big gap between Luko laptop and my beast at home
+    async with ClientSession() as session:
         tasks = []
         urls_parsed = []
         for domain, urls in sel_data.items():
@@ -328,7 +344,8 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
 
 
 def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50, lang='fr',
-              domain_url=dict(), outpath_str='res.txt', df_file_str='final_df.csv', from_scratch=False):
+              domain_url=dict(), outpath_str='res.txt', df_file_str='final_df.csv', from_scratch=False,
+              user_agent_file='./parameters/User_Agent.csv'):
     """ Function wrapping the scrapper
 
     Keyword Arguments:
@@ -340,9 +357,11 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50
     outpath_str {str} -- path where we store each batch result (default: {'res.txt'})
     df_file_str {str} -- path where we store csv dataframe result (default: {'final_df.csv'})
     from_scratch {bool} -- do we start from an existing dataframe (default: {False})
+    user_agent_file {str} -- path to user agent dataframe (default: {'./parameters/User_Agent.csv'})
     """
     assert sys.version_info >= (3, 7), 'Script requires Python 3.7+.'
     np.random.seed(26)
+    user_agent_list = get_user_agent_list(user_agent_file, n_iter)
     here = pathlib.Path(__file__).parent
     outpath_res = here.joinpath(outpath_str)
     df_file = here.joinpath(df_file_str)
@@ -361,7 +380,7 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50
         url_batch = [url for urls in sel_data.values() for url in urls]
         pd.DataFrame(url_batch).to_csv(search_res.resolve())
         asyncio.run(bulk_crawl_and_write(
-            outpath_res, sel_data, set(url_batch)))
+            outpath_res, sel_data, set(url_batch), **{'headers': {'User-Agent': user_agent_list[0]}}))
         data = pd.DataFrame()
         res = process_batch_res(data, outpath_res, df_file)
         res[3].to_csv(df_file.resolve(), sep=';', index=False)
@@ -373,7 +392,8 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50
         with open(outpath_res, "w") as outfile:
             outfile.write(
                 "timestamp;##;source_url;##;domain;##;parsed_url;##;code;##;processed;##;contains_luko;##;urls_sent\n")
-        asyncio.run(bulk_crawl_and_write(outpath_res, res[1], res[0]))
+        asyncio.run(bulk_crawl_and_write(
+            outpath_res, res[1], res[0], **{'headers': {'User-Agent': user_agent_list[i]}}))
         res = process_batch_res(res[3], outpath_res, df_file)
         if not res[1]:
             duration = datetime.datetime.now() - start
@@ -402,6 +422,8 @@ parser.add_argument('--df_file_str', default='final_df.csv',
                     type=str, help='csv path where result dataframe are saved')
 parser.add_argument('--from_scratch', default=False, type=bool,
                     help='Bool variable to start from scratch Google search')
+parser.add_argument('--user_agent_file', default='./parameters/User_Agent.csv', type=str,
+                    help='Path to the user agent dataframe csv')
 
 
 if __name__ == '__main__':
@@ -413,5 +435,6 @@ if __name__ == '__main__':
     outpath_str = args.outpath_str
     df_file_str = args.df_file_str
     from_scratch = args.from_scratch
+    user_agent_file = args.user_agent_file
     main_proc(n_iter=n_iter, search_term=search_term, lang=lang, domain_url=domain_url,
-              outpath_str=outpath_str, df_file_str=df_file_str, from_scratch=from_scratch)
+              outpath_str=outpath_str, df_file_str=df_file_str, from_scratch=from_scratch, user_agent_file=args.user_agent_file)
