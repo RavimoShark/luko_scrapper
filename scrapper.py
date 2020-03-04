@@ -37,9 +37,9 @@ DOMAIN_RE = re.compile(
     r"^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)")
 LUKO = 'luko'
 URL_REGEX = {'1parrainage.com': re.compile(r'.*1671.*')}
-DOMAIN_URL = {
-    'joemobile-avis.fr': ['https://www.joemobile-avis.fr/luko/code-promo-luko']}
-np.random.RandomState(seed=26)
+DOMAIN_URL = {'1parrainage.com': ['https://www.1parrainage.com/offre_parrainage_Luko.php'],
+              'joemobile-avis.fr': ['https://www.joemobile-avis.fr/luko/code-promo-luko']}
+
 USER_AGENT = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36'}
 
@@ -169,7 +169,7 @@ async def parse(url: str, domain: str, session: ClientSession, urls_found: set, 
                     if url_re:
                         for url in url_re.findall(str(abslink)):
                             found_urls.add(str(abslink))
-                            # logger.info("Found %s for url %s", abslink, url)
+                    #        # logger.info("Found %s for url %s", abslink, url)
                     else:
                         found_urls.add(str(abslink))
         for code in CODE_RE.findall(html):
@@ -253,8 +253,8 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
                 merged_res[list(res_dict.keys())[0]
                            ] = res_dict[list(res_dict.keys())[0]]
         for domain in merged_res.keys():
-            logger.info("Wrote results for code found: %s for url: %s",
-                        merged_res[domain].get('code', 0), domain)
+            logger.info("Wrote results for code found: %s for url_found: %s for url: %s",
+                        merged_res[domain].get('code', 0), merged_res[domain].get('url', 0), domain)
             # logger.info("Wrote results for url found: %s for url: %s", merged_res[domain].get('url',0), domain)
 
 
@@ -282,7 +282,7 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
     temp = pd.read_csv(res_file.resolve(), sep=';##;',
                        header=0, engine='python')
     print('######## Temp shape ', temp.shape)
-    if temp.shape > 0:
+    if temp.shape[0] > 0:
         data = pd.concat([data, temp], axis=0, ignore_index=True)
     print('######## data shape ', data.shape)
     data.loc[data['parsed_url'].isin(
@@ -293,11 +293,11 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
     #                                                         'parsed_url'].str.contains(pat=LUKO, case=False)
     # data.sort_values(by='contains_luko', ascending=False, inplace=True)
     # codes_found = data['code'].unique()
-    urls_found = data['parsed_url'].unique()es
+    urls_found = data['parsed_url'].unique()
     domains = data.loc[~data.processed, 'domain'].unique()
-    print(domains)
+    print("####domain left to explore : ", domains)
     domains_url = {}
-    for domain in np.random.choice(domains, int(len(domains)/2+1), replace=False):
+    for domain in np.random.choice(domains, min(10, len(domains)), replace=False):
         if url_count <= 0:
             break
         expl = data[(data['code'].isnull()) & (
@@ -305,12 +305,13 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
         if expl > EXPL_LIMITS:
             logger.info(
                 'The domain %s has reached his exploration limits %d links without any new codes', domain, EXPL_LIMITS)
+            data.loc[data['domain'] == domain, 'processed'] = True
             continue
         urls = list(data.loc[(data['domain'] == domain) & (
             ~data['processed']), 'parsed_url'].unique())
         if not urls:
             data.loc[data['domain'] == domain, 'processed'] = True
-            logger.info('The domain %s has been entirerely processed', domain)
+            logger.info('The domain %s has been entirely processed', domain)
             continue
         else:
             limit = min(url_count, 20, len(urls))
@@ -328,19 +329,20 @@ def process_batch_res(data: pd.DataFrame, res_file: IO, df_file: IO, url_count=1
 
 def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50, lang='fr',
               domain_url=dict(), outpath_str='res.txt', df_file_str='final_df.csv', from_scratch=False):
-              """ Function wrapping the scrapper
+    """ Function wrapping the scrapper
 
-              Keyword Arguments:
-                  n_iter {int} -- request batch number (default: {1000})
-                  search_term {str} -- google search term (default: {'SHARETHELOVE+Luko+code'})
-                  search_items {int} -- number of  top links retreieved from the search (default: {50})
-                  lang {str} -- trigramm language code for the google search engine (default: {'fr'})
-                  domain_url {[type]} -- domain :list of urls to add to the search result (default: {dict()})
-                  outpath_str {str} -- path where we store each batch result (default: {'res.txt'})
-                  df_file_str {str} -- path where we store csv dataframe result (default: {'final_df.csv'})
-                  from_scratch {bool} -- do we start from an existing dataframe (default: {False})
-              """
-    assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
+    Keyword Arguments:
+    n_iter {int} -- request batch number (default: {1000})
+    search_term {str} -- google search term (default: {'SHARETHELOVE+Luko+code'})
+    search_items {int} -- number of  top links retreieved from the search (default: {50})
+    lang {str} -- trigramm language code for the google search engine (default: {'fr'})
+    domain_url {[type]} -- domain :list of urls to add to the search result (default: {dict()})
+    outpath_str {str} -- path where we store each batch result (default: {'res.txt'})
+    df_file_str {str} -- path where we store csv dataframe result (default: {'final_df.csv'})
+    from_scratch {bool} -- do we start from an existing dataframe (default: {False})
+    """
+    assert sys.version_info >= (3, 7), 'Script requires Python 3.7+.'
+    np.random.seed(26)
     here = pathlib.Path(__file__).parent
     outpath_res = here.joinpath(outpath_str)
     df_file = here.joinpath(df_file_str)
@@ -355,12 +357,14 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50
                              'link'].agg(lambda x: list(x.values))).to_dict()
         sel_data = {**sel_data, **domain_url}
         search_res = here.joinpath(
-            'search_result_' + datetime.datetime.now().isoformat())
-        pd.DataFrame([url for urls in sel_data.values()
-                      for url in urls]).to_csv(search_res.resolve())
+            './search/search_result_' + datetime.datetime.now().isoformat())
+        url_batch = [url for urls in sel_data.values() for url in urls]
+        pd.DataFrame(url_batch).to_csv(search_res.resolve())
         asyncio.run(bulk_crawl_and_write(
-            outpath_res, sel_data, sel_data.values()))
-        res = process_batch_res(pd.DataFrame(), outpath_res, df_file)
+            outpath_res, sel_data, set(url_batch)))
+        data = pd.DataFrame()
+        res = process_batch_res(data, outpath_res, df_file)
+        res[3].to_csv(df_file.resolve(), sep=';', index=False)
     else:
         data = pd.read_csv(df_file.resolve(), sep=';')
         res = process_batch_res(data, outpath_res, df_file)
@@ -377,9 +381,10 @@ def main_proc(n_iter=1000, search_term='SHARETHELOVE+Luko+code', search_items=50
             res[3].to_csv(df_file.resolve(), sep=';', index=False)
         if i % 10 == 0:
             duration = datetime.datetime.now() - start
-            logger.info("Scrapper duration for 10 : %d", duration)
+            logger.info("Scrapper duration for 10 batches: %d", duration)
             logger.info("We have found %d codes", res[2])
             res[3].to_csv(df_file.resolve(), sep=';', index=False)
+    res[3].to_csv(df_file.resolve(), sep=';', index=False)
 
 
 parser = argparse.ArgumentParser(description='Luko Scrapper')
