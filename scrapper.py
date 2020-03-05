@@ -248,7 +248,7 @@ async def bulk_crawl_and_write(file_res: IO, sel_data: dict, urls_found: set, **
     # timeout strategy a lot of computer memory
     timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
     # and cpu i have a big gap between Luko laptop and my beast at home
-    async with ClientSession() as session:
+    async with ClientSession(timeout=timeout) as session:
         tasks = []
         urls_parsed = []
         for domain, urls in sel_data.items():
@@ -437,4 +437,4 @@ if __name__ == '__main__':
     from_scratch = args.from_scratch
     user_agent_file = args.user_agent_file
     main_proc(n_iter=n_iter, search_term=search_term, lang=lang, domain_url=domain_url,
-              outpath_str=outpath_str, df_file_str=df_file_str, from_scratch=from_scratch, user_agent_file=args.user_agent_file)
+              outpath_str=outpath_str, df_file_str=df_file_str, from_scratch=from_scratch, user_agent_file=user_agent_file)

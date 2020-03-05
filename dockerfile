@@ -130,4 +130,6 @@ RUN set -ex; \
     \) -exec rm -rf '{}' +; \
     rm -f get-pip.py
 
+RUN pip3 install argparse pathlib requests numpy asyncio aiohttp aiofiles pandas urllib3 argparse BeautifulSoup4
 CMD ["python3"]
+
